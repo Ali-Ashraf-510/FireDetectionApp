@@ -10,7 +10,7 @@ from tensorflow.keras.preprocessing.image import load_img, img_to_array
 # --- تهيئة التطبيق ---
 app = Flask(__name__)
 
-# --- تحميل النموذج المُدرب مسبقًا ---
+# --- تحميل النموذج ---
 MODEL_PATH = 'fire_detection_model.h5'
 try:
     model = load_model(MODEL_PATH)
@@ -19,73 +19,51 @@ except Exception as e:
     print(f"Error loading model: {e}")
     exit()
 
-# --- تعريف أسماء الفئات ---
-# يجب أن تكون بنفس ترتيب الفئات التي تدرب عليها النموذج
-# في حالتنا: fire_images, non_fire_images
-# تأكد من الترتيب الصحيح من خلال train_images.class_indices في دفتر Colab
+# --- أسماء الفئات ---
 CLASS_NAMES = ['حريق (Fire)', 'لا يوجد حريق (No Fire)']
 
-
+# --- دالة التنبؤ ---
 def model_predict(img_path, model):
-    """
-    دالة لمعالجة الصورة والتنبؤ بنوعها
-    :param img_path: مسار الصورة
-    :param model: النموذج المحمل
-    :return: اسم الفئة المتوقعة ونسبة الثقة
-    """
     img = load_img(img_path, target_size=(224, 224))
     img_array = img_to_array(img)
-    
-    # استخدام دالة المعالجة الخاصة بنموذج MobileNetV2
     preprocessed_img = tf.keras.applications.mobilenet_v2.preprocess_input(img_array)
-    
-    # إضافة بعد إضافي لتناسب إدخال النموذج
     img_batch = np.expand_dims(preprocessed_img, axis=0)
-
-    # إجراء التنبؤ
     predictions = model.predict(img_batch)
-    
-    # الحصول على الفئة ذات الاحتمالية الأعلى ونسبة الثقة
     score = np.max(predictions[0])
     predicted_class_index = np.argmax(predictions[0])
-    
-    # إرجاع اسم الفئة ونسبة الثقة
     return CLASS_NAMES[predicted_class_index], score
 
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
-        if 'file' not in request.files:
-            return render_template('index.html', error='لم يتم اختيار أي ملف')
-        
-        file = request.files['file']
+        if 'files' not in request.files:
+            return render_template('index.html', error='لم يتم اختيار أي ملفات')
 
-        if file.filename == '':
-            return render_template('index.html', error='لم يتم اختيار أي ملف')
+        files = request.files.getlist('files')
 
-        if file:
-            filename = secure_filename(file.filename)
-            
-            # إنشاء مسار لحفظ الملف المرفوع في مجلد 'static/uploads'
-            basepath = os.path.dirname(__file__)
-            upload_folder = os.path.join(basepath, 'static', 'uploads')
-            os.makedirs(upload_folder, exist_ok=True)
-            file_path = os.path.join(upload_folder, filename)
-            
-            file.save(file_path)
+        if not files or all(file.filename == '' for file in files):
+            return render_template('index.html', error='الرجاء اختيار صورة واحدة على الأقل')
 
-            # إجراء التنبؤ
-            prediction, score = model_predict(file_path, model)
+        results = []
+        basepath = os.path.dirname(__file__)
+        upload_folder = os.path.join(basepath, 'static', 'uploads')
+        os.makedirs(upload_folder, exist_ok=True)
 
-            # إرسال النتيجة ومسار الصورة إلى الواجهة الأمامية
-            return render_template('index.html', 
-                                   prediction=prediction, 
-                                   score=f"{score*100:.2f}%",
-                                   uploaded_image=f'uploads/{filename}')
-    
+        for file in files:
+            if file and file.filename != '':
+                filename = secure_filename(file.filename)
+                file_path = os.path.join(upload_folder, filename)
+                file.save(file_path)
+
+                prediction, score = model_predict(file_path, model)
+
+                results.append({
+                    'image': f'uploads/{filename}',
+                    'prediction': prediction,
+                    'score': f"{score * 100:.2f}%"
+                })
+
+        return render_template('index.html', results=results)
+
     return render_template('index.html')
-
-
-if __name__ == '__main__':
-    app.run(debug=True)
