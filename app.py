@@ -11,7 +11,7 @@ from tensorflow.keras.preprocessing.image import load_img, img_to_array
 app = Flask(__name__)
 
 # --- تحميل النموذج ---
-MODEL_PATH = 'fire_detection_model_v2.keras'
+MODEL_PATH = 'Models/fire_detection_model_v2.keras'
 try:
     model = load_model(MODEL_PATH)
     print(f"Model loaded successfully from {MODEL_PATH}")
